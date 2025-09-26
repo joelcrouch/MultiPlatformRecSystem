@@ -2,6 +2,16 @@ import os
 import json
 from pymongo import MongoClient, errors
 import re
+import shutil
+import argparse
+
+def check_disk_space(path, min_free_gb=20):
+    """Check if sufficient disk space is available"""
+    free_bytes = shutil.disk_usage(path).free
+    free_gb = free_bytes / (1024**3)
+    print(f"Checking disk space for '{path}'. Available: {free_gb:.1f}GB. Required: {min_free_gb}GB.")
+    if free_gb < min_free_gb:
+        raise Exception(f"Insufficient disk space: {free_gb:.1f}GB available, but {min_free_gb}GB is required.")
 
 def sanitize_collection_name(filename):
     """Sanitizes a filename to be a valid collection name."""
@@ -9,11 +19,17 @@ def sanitize_collection_name(filename):
     name = re.sub(r'[^a-zA-Z0-9_]', '_', name)
     return name
 
-def load_data_to_mongodb():
-    """Loads all .jsonl files from the extracted data directory into a MongoDB database."""
+def load_data_to_mongodb(category=None):
+    """Loads .jsonl files from the extracted data directory into a MongoDB database, optionally filtering by category."""
+    try:
+        home_path = os.path.expanduser('~')
+        check_disk_space(home_path, min_free_gb=20)
+    except Exception as e:
+        print(f"Pre-flight check failed: {e}")
+        return
+
     try:
         client = MongoClient('mongodb://localhost:27017/', serverSelectionTimeoutMS=5000)
-        # The ismaster command is cheap and does not require auth.
         client.admin.command('ismaster')
         print("MongoDB connection successful.")
     except errors.ServerSelectionTimeoutError as err:
@@ -29,6 +45,9 @@ def load_data_to_mongodb():
         return
 
     files_to_load = [f for f in os.listdir(source_dir) if f.endswith('.jsonl')]
+    if category:
+        files_to_load = [f for f in files_to_load if category in f]
+        print(f"Found {len(files_to_load)} files for category '{category}'.")
 
     for filename in files_to_load:
         collection_name = sanitize_collection_name(filename)
@@ -55,11 +74,10 @@ def load_data_to_mongodb():
 
                     if i % batch_size == 0:
                         if batch:
-                            collection.insert_many(batch, ordered=False) # ordered=False can be faster
+                            collection.insert_many(batch, ordered=False)
                             print(f"  ... inserted {i} documents into '{collection_name}'.")
                             batch = []
             
-            # Insert any remaining documents in the last batch
             if batch:
                 collection.insert_many(batch, ordered=False)
                 print(f"  ... inserted final {len(batch)} documents into '{collection_name}'.")
@@ -73,4 +91,8 @@ def load_data_to_mongodb():
     print("\nMongoDB data loading process finished.")
 
 if __name__ == '__main__':
-    load_data_to_mongodb()
+    parser = argparse.ArgumentParser(description='Load data into MongoDB, optionally filtering by category.')
+    parser.add_argument('--category', type=str, help='The category to load (e.g., Books, Electronics).')
+    args = parser.parse_args()
+
+    load_data_to_mongodb(args.category)

@@ -2,10 +2,12 @@ import os
 import gzip
 import shutil
 import zipfile
+import argparse
 
-def extract_all_data():
+def extract_data(category=None):
     """
-    Extracts all compressed datasets from the data/raw directory.
+    Extracts compressed datasets from the data/raw directory.
+    If a category is specified, only files matching that category are extracted.
     - .jsonl.gz files are extracted to data/raw/extracted/
     - ml-32m.zip is extracted to data/
     """
@@ -15,9 +17,15 @@ def extract_all_data():
 
     os.makedirs(extracted_dir, exist_ok=True)
 
-    print("Starting full data extraction...")
+    if category:
+        print(f"Starting extraction for category: {category}...")
+    else:
+        print("Starting full data extraction...")
 
     for filename in os.listdir(raw_dir):
+        if category and category not in filename:
+            continue
+
         source_path = os.path.join(raw_dir, filename)
 
         if filename.endswith('.jsonl.gz'):
@@ -51,5 +59,9 @@ def extract_all_data():
                 print(f"Skipping {filename}, directory {extract_path} already exists.")
 
 if __name__ == '__main__':
-    extract_all_data()
-    print("\nFull extraction process finished.")
+    parser = argparse.ArgumentParser(description='Extract data, optionally filtering by category.')
+    parser.add_argument('--category', type=str, help='The category to extract (e.g., Books, Electronics).')
+    args = parser.parse_args()
+
+    extract_data(args.category)
+    print("\nExtraction process finished.")
